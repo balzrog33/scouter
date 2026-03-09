@@ -112,8 +112,9 @@ class Cmder
         $config['max_concurrent_chrome'] = (int)getenv('MAX_CONCURRENT_CHROME');
     }
     
-    // Propager follow_redirects et crawl_type dans la config
+    // Propager follow_redirects, retry_failed_urls et crawl_type dans la config
     $config['follow_redirects'] = $data['advanced']['follow_redirects'] ?? true;
+    $config['retry_failed_urls'] = $data['advanced']['retry_failed_urls'] ?? true;
     $config['crawl_type'] = $data['general']['crawl_type'] ?? 'spider';
 
     // Ajouter xPathExtractors et regexExtractors s'ils existent

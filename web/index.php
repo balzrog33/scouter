@@ -1067,6 +1067,76 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
         </div>
     </div>
 
+
+
+    <!-- Modal Relancer un crawl avec paramètres -->
+    <div id="duplicateCrawlModal" class="modal category-modal">
+        <div class="cat-modal-container" style="max-width: 560px;">
+            <div class="cat-modal-header">
+                <div class="cat-modal-title">
+                    <span class="material-symbols-outlined">rocket_launch</span>
+                    <h2><?= __('index.btn_launch_crawl') ?></h2>
+                </div>
+                <button class="cat-modal-close" type="button" onclick="closeDuplicateCrawlModal()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <div class="cat-modal-body">
+                <p style="margin: 0 0 1rem 0; color: #6b7280;"><?= __('index.launch_crawl') ?> - paramètres de ce run uniquement</p>
+
+                <div class="settings-grid" style="margin-top: 0;">
+                    <div class="setting-row">
+                        <div class="setting-row-label">
+                            <span class="material-symbols-outlined">layers</span>
+                            <h4><?= __('index.modal_max_depth') ?></h4>
+                        </div>
+                        <div class="setting-row-control">
+                            <input type="number" id="duplicate_depth_max" min="1" max="100" class="setting-input-number">
+                            <span class="setting-unit"><?= __('common.levels') ?></span>
+                        </div>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-row-label">
+                            <span class="material-symbols-outlined">speed</span>
+                            <h4><?= __('index.modal_crawl_speed') ?></h4>
+                        </div>
+                        <div class="setting-row-control">
+                            <select id="duplicate_crawl_speed" class="setting-input-number" style="min-width: 220px;">
+                                <option value="very_slow"><?= __('index.modal_speed_very_slow') ?></option>
+                                <option value="slow"><?= __('index.modal_speed_slow') ?></option>
+                                <option value="fast"><?= __('index.modal_speed_fast') ?></option>
+                                <option value="unlimited"><?= __('index.modal_speed_unlimited') ?></option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-row-label">
+                            <span class="material-symbols-outlined">code</span>
+                            <h4><?= __('index.modal_crawl_mode') ?></h4>
+                        </div>
+                        <div class="setting-row-control">
+                            <select id="duplicate_crawl_mode" class="setting-input-number" style="min-width: 220px;">
+                                <option value="classic"><?= __('index.modal_mode_classic') ?></option>
+                                <option value="javascript"><?= __('index.modal_mode_javascript') ?></option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cat-modal-footer" style="gap: 0.75rem;">
+                <button type="button" class="btn btn-secondary" onclick="cancelDuplicateCrawlModal()"><?= __('common.cancel') ?></button>
+                <button type="button" class="btn btn-primary" onclick="submitDuplicateCrawlModal()">
+                    <span class="material-symbols-outlined">rocket_launch</span>
+                    <?= __('index.btn_launch_crawl') ?>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Quick Add Category -->
     <div id="quickAddCategoryModal" class="modal category-modal">
         <div class="cat-modal-container" style="max-width: 450px;">
@@ -1100,6 +1170,57 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
     <script>
         let extractorCounter = 0;
         let headerCounter = 0;
+        let duplicateCrawlModalResolver = null;
+
+        function openDuplicateCrawlModal(defaults = {}) {
+            const modal = document.getElementById('duplicateCrawlModal');
+            document.getElementById('duplicate_depth_max').value = String(defaults.depth_max || 30);
+            document.getElementById('duplicate_crawl_speed').value = defaults.crawl_speed || 'fast';
+            document.getElementById('duplicate_crawl_mode').value = defaults.crawl_mode || 'classic';
+            modal.style.display = 'flex';
+
+            return new Promise((resolve) => {
+                duplicateCrawlModalResolver = resolve;
+            });
+        }
+
+        function closeDuplicateCrawlModal() {
+            const modal = document.getElementById('duplicateCrawlModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        function cancelDuplicateCrawlModal() {
+            closeDuplicateCrawlModal();
+            if (duplicateCrawlModalResolver) {
+                duplicateCrawlModalResolver(null);
+                duplicateCrawlModalResolver = null;
+            }
+        }
+
+        function submitDuplicateCrawlModal() {
+            const depth = Number(document.getElementById('duplicate_depth_max').value || 30);
+            const crawlSpeed = document.getElementById('duplicate_crawl_speed').value || 'fast';
+            const crawlMode = document.getElementById('duplicate_crawl_mode').value || 'classic';
+
+            const overrides = {};
+            if (Number.isFinite(depth) && depth >= 1 && depth <= 100) {
+                overrides.depth_max = Math.floor(depth);
+            }
+            if (['very_slow', 'slow', 'fast', 'unlimited'].includes(crawlSpeed)) {
+                overrides.crawl_speed = crawlSpeed;
+            }
+            if (['classic', 'javascript'].includes(crawlMode)) {
+                overrides.crawl_mode = crawlMode;
+            }
+
+            closeDuplicateCrawlModal();
+            if (duplicateCrawlModalResolver) {
+                duplicateCrawlModalResolver(overrides);
+                duplicateCrawlModalResolver = null;
+            }
+        }
 
         // ============================================
         // GESTION DE LA MODAL
@@ -1179,6 +1300,7 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
             const newProjectModal = document.getElementById('newProjectModal');
             const categoriesModal = document.getElementById('categoriesModal');
             const quickAddModal = document.getElementById('quickAddCategoryModal');
+            const duplicateCrawlModal = document.getElementById('duplicateCrawlModal');
             
             if (event.target == newProjectModal) {
                 closeNewProjectModal();
@@ -1188,6 +1310,9 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
             }
             if (event.target == quickAddModal) {
                 closeQuickAddCategoryModal();
+            }
+            if (event.target == duplicateCrawlModal) {
+                cancelDuplicateCrawlModal();
             }
         }
 
@@ -2523,7 +2648,32 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
             if (!await customConfirm(__('index.btn_launch_crawl'), __('index.btn_launch_crawl'), __('index.btn_launch_crawl'), 'primary')) {
                 return;
             }
-            
+
+            // Surcharges optionnelles pour ce lancement uniquement (sans modifier le projet)
+            let overrides = {};
+            try {
+                const infoResponse = await fetch(`api/crawls/info?project=${encodeURIComponent(projectDir)}`);
+                const infoData = await infoResponse.json();
+                const baseConfig = infoData?.crawl?.config ? JSON.parse(infoData.crawl.config) : {};
+
+                const currentDepth = Number(baseConfig?.general?.depthMax || infoData?.crawl?.depth_max || 30);
+                const currentSpeed = String(baseConfig?.general?.crawl_speed || 'fast');
+                const currentMode = String(baseConfig?.general?.crawl_mode || 'classic');
+
+                const modalResult = await openDuplicateCrawlModal({
+                    depth_max: currentDepth,
+                    crawl_speed: currentSpeed,
+                    crawl_mode: currentMode
+                });
+
+                if (modalResult === null) {
+                    return;
+                }
+                overrides = modalResult;
+            } catch (e) {
+                console.warn('Impossible de récupérer la config du crawl source, duplication avec config existante.', e);
+            }
+
             const button = event.target.closest('button');
             const originalHTML = button.innerHTML;
             button.disabled = true;
@@ -2531,6 +2681,9 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
             
             try {
                 const payload = { project: projectDir };
+                if (Object.keys(overrides).length > 0) {
+                    payload.overrides = overrides;
+                }
                 // Si un targetUserId est fourni (admin sur projet d'un autre), le passer à l'API
                 if (targetUserId) {
                     payload.target_user_id = targetUserId;

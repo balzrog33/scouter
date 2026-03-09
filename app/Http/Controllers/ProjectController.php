@@ -561,6 +561,37 @@ class ProjectController extends Controller
         
         // Récupérer la configuration du crawl source
         $sourceConfig = json_decode($sourceCrawl->config ?? '{}', true) ?: [];
+
+        // Permettre des surcharges de configuration pour ce nouveau crawl uniquement
+        // (sans modifier le projet ni le crawl source)
+        $overrides = $request->get('overrides', []);
+        if (is_array($overrides) && !empty($overrides)) {
+            $sourceConfig['general'] = $sourceConfig['general'] ?? [];
+            $sourceConfig['advanced'] = $sourceConfig['advanced'] ?? [];
+
+            if (isset($overrides['crawl_speed']) && in_array($overrides['crawl_speed'], ['very_slow', 'slow', 'normal', 'fast', 'unlimited'], true)) {
+                $sourceConfig['general']['crawl_speed'] = $overrides['crawl_speed'];
+            }
+
+            if (isset($overrides['crawl_mode']) && in_array($overrides['crawl_mode'], ['classic', 'javascript'], true)) {
+                $sourceConfig['general']['crawl_mode'] = $overrides['crawl_mode'];
+            }
+
+            if (isset($overrides['user_agent']) && is_string($overrides['user_agent'])) {
+                $ua = trim($overrides['user_agent']);
+                if ($ua !== '') {
+                    $sourceConfig['general']['user-agent'] = mb_substr($ua, 0, 500);
+                }
+            }
+
+            if (array_key_exists('follow_redirects', $overrides)) {
+                $sourceConfig['advanced']['follow_redirects'] = filter_var($overrides['follow_redirects'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true;
+            }
+
+            if (array_key_exists('retry_failed_urls', $overrides)) {
+                $sourceConfig['advanced']['retry_failed_urls'] = filter_var($overrides['retry_failed_urls'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true;
+            }
+        }
         
         // Valider que la config source est complète
         if (empty($sourceConfig) || !isset($sourceConfig['general']) || !isset($sourceConfig['general']['start'])) {
@@ -582,6 +613,12 @@ class ProjectController extends Controller
         
         // Synchroniser depthMax dans le config JSON avec la colonne DB
         $depthMax = $sourceCrawl->depth_max ?? 30;
+        if (is_array($overrides) && isset($overrides['depth_max'])) {
+            $overrideDepth = (int)$overrides['depth_max'];
+            if ($overrideDepth >= 1 && $overrideDepth <= 100) {
+                $depthMax = $overrideDepth;
+            }
+        }
         $sourceConfig['general']['depthMax'] = $depthMax;
 
         // Créer le nouveau crawl avec la même configuration

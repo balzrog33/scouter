@@ -593,7 +593,7 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
                 <!-- Header - Titre + Close uniquement -->
                 <div class="crawl-modal-hero">
                     <div class="hero-header">
-                        <div class="hero-title">
+                        <div class="hero-title" id="newProjectModalTitle">
                             <span class="material-symbols-outlined">rocket_launch</span>
                             <?= __('index.modal_new_project') ?>
                         </div>
@@ -1100,23 +1100,129 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
     <script>
         let extractorCounter = 0;
         let headerCounter = 0;
+        let newCrawlContext = null;
+        const defaultNewProjectTitle = <?= json_encode(__('index.modal_new_project')) ?>;
+        const launchCrawlLabel = <?= json_encode(__('index.btn_launch_crawl')) ?>;
 
         // ============================================
         // GESTION DE LA MODAL
         // ============================================
         
-        function openNewProjectModal() {
+        function openNewProjectModal(options = null) {
+            newCrawlContext = options;
             document.getElementById('newProjectModal').style.display = 'flex';
+            const modalTitle = document.getElementById('newProjectModalTitle');
+            if (modalTitle) {
+                modalTitle.innerHTML = `<span class="material-symbols-outlined">rocket_launch</span>${(options && options.isDuplicate) ? launchCrawlLabel : defaultNewProjectTitle}`;
+            }
             // Focus sur le champ URL
             setTimeout(() => {
                 document.getElementById('start_url').focus();
             }, 100);
             // Reset to first tab
             switchCrawlTab('general');
-            // Add default extractors
-            initDefaultExtractors();
+            setStartInputLockState(!!(options && options.isDuplicate));
+
+            if (options && options.prefillConfig) {
+                applyConfigToModal(options.prefillConfig, options.crawlType || 'spider');
+            } else {
+                // Add default extractors
+                initDefaultExtractors();
+            }
+        }
+
+        function applyConfigToModal(config = {}, crawlType = 'spider') {
+            const general = config.general || {};
+            const advanced = config.advanced || {};
+            const respect = advanced.respect || {};
+
+            const typeBtn = document.querySelector(`.segmented-btn[data-type="${crawlType}"]`) || document.querySelector('.segmented-btn[data-type="spider"]');
+            if (typeBtn) {
+                selectCrawlType(crawlType, typeBtn);
+            }
+
+            const startInput = document.getElementById('start_url');
+            if (startInput) startInput.value = general.start || '';
+
+            const urlListInput = document.getElementById('url_list');
+            if (urlListInput) {
+                const listUrls = Array.isArray(general.url_list) ? general.url_list : [];
+                urlListInput.value = listUrls.join('\n');
+                uploadedFileContent = null;
+            }
+            updateUrlCounter();
+
+            document.getElementById('depth_max').value = general.depthMax ?? 30;
+            document.getElementById('allowed_domains').value = Array.isArray(general.domains) ? general.domains.join('\n') : '';
+
+            const speed = general.crawl_speed || 'fast';
+            const speedOption = document.querySelector(`#speedDropdown .speed-select-option[data-value="${speed}"]`);
+            if (speedOption) {
+                speedOption.click();
+            }
+
+            const mode = general.crawl_mode || 'classic';
+            const modeBtn = document.querySelector(`.mode-btn[data-mode="${mode}"]`) || document.querySelector('.mode-btn[data-mode="classic"]');
+            if (modeBtn) {
+                selectMode(modeBtn.dataset.mode, modeBtn);
+            }
+
+            const userAgent = general['user-agent'] || '';
+            document.getElementById('user_agent').value = userAgent;
+            document.getElementById('custom_ua_input').value = userAgent;
+
+            document.getElementById('respect_robots').checked = !!(respect.robots ?? advanced.respect_robots ?? true);
+            document.getElementById('respect_nofollow').checked = !!(respect.nofollow ?? advanced.respect_nofollow ?? false);
+            document.getElementById('respect_canonical').checked = !!(respect.canonical ?? advanced.respect_canonical ?? true);
+            document.getElementById('follow_redirects').checked = !!(advanced.follow_redirects ?? true);
+            document.getElementById('retry_failed_urls').checked = !!(advanced.retry_failed_urls ?? true);
+
+            const httpAuth = advanced.http_auth || null;
+            document.getElementById('enable_auth').checked = !!(httpAuth && (httpAuth.username || httpAuth.password));
+            toggleAuthFields();
+            document.getElementById('auth_username').value = httpAuth?.username || '';
+            document.getElementById('auth_password').value = httpAuth?.password || '';
+
+            document.getElementById('headersList').innerHTML = '';
+            headerCounter = 0;
+            const customHeaders = advanced.custom_headers || {};
+            Object.entries(customHeaders).forEach(([name, value]) => addHeaderWithValues(name, value));
+
+            document.getElementById('extractorsList').innerHTML = '';
+            extractorCounter = 0;
+            const xPathExtractors = advanced.xPathExtractors || {};
+            const regexExtractors = advanced.regexExtractors || {};
+            Object.entries(xPathExtractors).forEach(([name, pattern]) => addExtractorWithValues(name, 'xpath', pattern));
+            Object.entries(regexExtractors).forEach(([name, pattern]) => addExtractorWithValues(name, 'regex', pattern));
+            updateExtractorsEmptyState();
         }
         
+        function setStartInputLockState(locked = false) {
+            const startInput = document.getElementById('start_url');
+            const urlListInput = document.getElementById('url_list');
+            const fileInput = document.getElementById('urlFileInput');
+            const fileZone = document.getElementById('fileUploadZone');
+
+            if (startInput) {
+                startInput.readOnly = locked;
+                startInput.classList.toggle('input-locked', locked);
+            }
+
+            if (urlListInput) {
+                urlListInput.readOnly = locked;
+                urlListInput.classList.toggle('input-locked', locked);
+            }
+
+            if (fileInput) {
+                fileInput.disabled = locked;
+            }
+
+            if (fileZone) {
+                fileZone.style.pointerEvents = locked ? 'none' : '';
+                fileZone.style.opacity = locked ? '0.6' : '';
+            }
+        }
+
         function initDefaultExtractors() {
             // Clear existing
             document.getElementById('extractorsList').innerHTML = '';
@@ -1135,9 +1241,15 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
             document.getElementById('headersList').innerHTML = '';
             extractorCounter = 0;
             headerCounter = 0;
+            newCrawlContext = null;
             // Reset UI states
             updateExtractorsEmptyState();
             resetModalDefaults();
+            setStartInputLockState(false);
+            const modalTitle = document.getElementById('newProjectModalTitle');
+            if (modalTitle) {
+                modalTitle.innerHTML = `<span class="material-symbols-outlined">rocket_launch</span>${defaultNewProjectTitle}`;
+            }
         }
         
         function resetModalDefaults() {
@@ -1172,6 +1284,7 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
 
             // Reset follow_redirects
             document.getElementById('follow_redirects').checked = true;
+            setStartInputLockState(false);
         }
 
         // Close modal when clicking outside
@@ -1791,32 +1904,45 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
             }
             
             try {
-                // Create project
-                const response = await fetch('api/projects', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
-                });
-                
-                const result = await response.json();
-                
-                if (!response.ok || !result.success) {
-                    throw new Error(result.error || __('common.error'));
-                }
-                
-                formMessage.innerHTML = '<div class="alert alert-success">✓ ' + __('index.msg_project_created') + '</div>';
-                
-                // Start crawl
-                const crawlResponse = await fetch('api/crawls/start', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ project_dir: result.project_dir })
-                });
-                
-                const crawlResult = await crawlResponse.json();
-                
-                if (!crawlResponse.ok || !crawlResult.success) {
-                    throw new Error(crawlResult.error || __('common.error'));
+                let result;
+                if (newCrawlContext && newCrawlContext.isDuplicate) {
+                    const duplicatePayload = {
+                        project: newCrawlContext.sourceProjectDir,
+                        target_user_id: newCrawlContext.targetUserId,
+                        config_override: formData
+                    };
+                    const duplicateResponse = await fetch('api/projects/duplicate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(duplicatePayload)
+                    });
+                    result = await duplicateResponse.json();
+                    if (!duplicateResponse.ok || !result.success) {
+                        throw new Error(result.error || __('common.error'));
+                    }
+                } else {
+                    // Create project
+                    const response = await fetch('api/projects', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(formData)
+                    });
+                    result = await response.json();
+                    if (!response.ok || !result.success) {
+                        throw new Error(result.error || __('common.error'));
+                    }
+                    formMessage.innerHTML = '<div class="alert alert-success">✓ ' + __('index.msg_project_created') + '</div>';
+
+                    // Start crawl for new project
+                    const crawlResponse = await fetch('api/crawls/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ project_dir: result.project_dir })
+                    });
+                    const crawlResult = await crawlResponse.json();
+                    if (!crawlResponse.ok || !crawlResult.success) {
+                        throw new Error(crawlResult.error || __('common.error'));
+                    }
                 }
                 
                 formMessage.innerHTML = '<div class="alert alert-success">✓ ' + __('index.msg_crawl_launched') + '</div>';
@@ -2519,62 +2645,16 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
 
         // Dupliquer et lancer un nouveau crawl
         // targetUserId: ID du propriétaire du projet (pour admin qui crée un crawl sur le projet d'un autre)
-        async function duplicateAndStart(projectDir, targetUserId = null) {
-            if (!await customConfirm(__('index.btn_launch_crawl'), __('index.btn_launch_crawl'), __('index.btn_launch_crawl'), 'primary')) {
-                return;
-            }
-            
-            const button = event.target.closest('button');
-            const originalHTML = button.innerHTML;
-            button.disabled = true;
-            button.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px;">hourglass_empty</span> ' + __('common.loading');
-            
-            try {
-                const payload = { project: projectDir };
-                // Si un targetUserId est fourni (admin sur projet d'un autre), le passer à l'API
-                if (targetUserId) {
-                    payload.target_user_id = targetUserId;
-                }
-                
-                const response = await fetch('api/projects/duplicate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    // Fermer le menu kebab
-                    document.querySelectorAll('.kebab-dropdown-menu').forEach(m => m.classList.remove('show'));
-                    
-                    // Utiliser le domaine retourné par l'API
-                    const projectName = data.domain || 'Crawl';
-                    
-                    // Démarrer le monitoring dans le panel latéral
-                    CrawlPanel.start(data.project_dir, projectName, data.crawl_id);
-
-                    // Soft refresh the project list (no full page reload)
-                    setTimeout(() => {
-                        if (typeof refreshProjectList === 'function') {
-                            refreshProjectList();
-                        }
-                    }, 1500);
-
-                    // Restaurer le bouton
-                    button.disabled = false;
-                    button.innerHTML = originalHTML;
-                    return;
-                } else {
-                    alert(__('common.error') + ': ' + (data.error || __('common.error')));
-                    button.disabled = false;
-                    button.innerHTML = originalHTML;
-                }
-            } catch (error) {
-                alert(__('common.error') + ': ' + error.message);
-                button.disabled = false;
-                button.innerHTML = originalHTML;
-            }
+        function duplicateAndStart(projectDir, targetUserId = null, crawlType = 'spider', config = {}) {
+            // Fermer le menu kebab puis ouvrir la même modal de configuration que la création
+            document.querySelectorAll('.kebab-dropdown-menu').forEach(m => m.classList.remove('show'));
+            openNewProjectModal({
+                isDuplicate: true,
+                sourceProjectDir: projectDir,
+                targetUserId,
+                crawlType,
+                prefillConfig: config
+            });
         }
         
         // Dropdown administration

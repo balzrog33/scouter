@@ -106,7 +106,12 @@ $projectCategoryIds = array_map(fn($c) => $c->id, $projectCategories);
                 </button>
                 <div class="kebab-dropdown-menu" id="kebab-dropdown-project-<?= $projectId ?>">
                     <?php if($canCreate && $isOwner && $latestCrawl): ?>
-                    <div class="kebab-dropdown-item primary" onclick="duplicateAndStart('<?= htmlspecialchars($latestCrawl->dir) ?>', <?= $project->user_id ?>); event.stopPropagation();">
+                    <div class="kebab-dropdown-item primary" onclick='duplicateAndStart(
+                        <?= json_encode($latestCrawl->dir) ?>,
+                        <?= (int)($project->user_id ?? 0) ?>,
+                        <?= json_encode($latestCrawl->crawl_type ?? 'spider') ?>,
+                        <?= htmlspecialchars(json_encode($latestCrawl->config ?? []), ENT_QUOTES) ?>
+                    ); event.stopPropagation();'>
                         <span class="material-symbols-outlined">refresh</span>
                         <span><?= __('index.new_crawl') ?></span>
                     </div>
@@ -201,6 +206,7 @@ $projectCategoryIds = array_map(fn($c) => $c->id, $projectCategories);
                                 <span class="material-symbols-outlined config-icon <?= !empty($crawl->config['advanced']['respect']['nofollow']) ? 'active' : 'inactive' ?>" title="<?= __('index.respect_nofollow') ?>">link_off</span>
                                 <span class="material-symbols-outlined config-icon <?= ($crawl->config['advanced']['follow_redirects'] ?? true) ? 'active' : 'inactive' ?>" title="<?= __('index.follow_redirects') ?>">redo</span>
                                 <?php if (($crawl->crawl_type ?? 'spider') !== 'list'): ?>
+                                    <span class="config-crawl-speed-badge" title="<?= __('index.modal_crawl_speed') ?>"><?= $crawl->config['general']['crawl_speed'] ?? '-' ?></span>
                                     <span class="config-depth-badge" title="<?= __('index.max_depth') ?>"><?= $crawl->config['general']['depthMax'] ?? '-' ?></span>
                                 <?php endif; ?>
                             </div>

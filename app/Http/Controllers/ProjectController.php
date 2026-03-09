@@ -561,6 +561,105 @@ class ProjectController extends Controller
         
         // Récupérer la configuration du crawl source
         $sourceConfig = json_decode($sourceCrawl->config ?? '{}', true) ?: [];
+
+        // Surcharge optionnelle de config (utilisée par la modal "Nouveau crawl" depuis un projet existant)
+        $configOverride = $request->get('config_override', null);
+        if (is_array($configOverride) && !empty($configOverride)) {
+            $crawlType = $configOverride['crawl_type'] ?? ($sourceCrawl->crawl_type ?? 'spider');
+            if (!in_array($crawlType, ['spider', 'list'])) {
+                $crawlType = 'spider';
+            }
+
+            $startUrl = trim((string)($configOverride['start_url'] ?? ''));
+            $urlListRaw = (string)($configOverride['url_list'] ?? '');
+            $depthMaxOverride = (int)($configOverride['depth_max'] ?? ($sourceCrawl->depth_max ?? 30));
+            $allowedDomains = $configOverride['allowed_domains'] ?? [];
+            if (!is_array($allowedDomains)) {
+                $allowedDomains = [];
+            }
+
+            if ($crawlType === 'list') {
+                $urls = [];
+                foreach (explode("\n", $urlListRaw) as $line) {
+                    $line = trim($line);
+                    if ($line === '') continue;
+                    if (strpos($line, 'http://') !== 0 && strpos($line, 'https://') !== 0) continue;
+                    $urls[] = mb_substr($line, 0, 2083);
+                }
+                $urls = array_values(array_unique($urls));
+                if (empty($urls)) {
+                    $this->error('Aucune URL valide dans la liste (http:// ou https:// obligatoire)');
+                }
+                $startUrl = $urls[0];
+
+                if (empty($allowedDomains)) {
+                    $allDomains = [];
+                    foreach ($urls as $url) {
+                        $p = parse_url($url);
+                        if (!empty($p['host'])) {
+                            $allDomains[] = $p['host'];
+                        }
+                    }
+                    $allowedDomains = array_values(array_unique($allDomains));
+                }
+            } else {
+                if (empty($startUrl) || !filter_var($startUrl, FILTER_VALIDATE_URL)) {
+                    $this->error('URL invalide');
+                }
+                if (empty($allowedDomains)) {
+                    $parsed = parse_url($startUrl);
+                    $host = $parsed['host'] ?? '';
+                    if (!empty($host)) {
+                        $allowedDomains = [$host];
+                    }
+                }
+            }
+
+            $xPathExtractors = [];
+            $regexExtractors = [];
+            $extractors = $configOverride['extractors'] ?? [];
+            if (is_array($extractors)) {
+                foreach ($extractors as $ext) {
+                    if (!is_array($ext)) continue;
+                    $name = trim((string)($ext['name'] ?? ''));
+                    $pattern = trim((string)($ext['pattern'] ?? ''));
+                    if ($name === '' || $pattern === '') continue;
+                    $type = ($ext['type'] ?? 'xpath') === 'regex' ? 'regex' : 'xpath';
+                    if ($type === 'xpath') {
+                        $xPathExtractors[$name] = $pattern;
+                    } else {
+                        $regexExtractors[$name] = $pattern;
+                    }
+                }
+            }
+
+            $sourceConfig = [
+                'general' => [
+                    'start' => $startUrl,
+                    'depthMax' => $depthMaxOverride,
+                    'domains' => $allowedDomains,
+                    'crawl_speed' => $configOverride['crawl_speed'] ?? 'fast',
+                    'crawl_mode' => $configOverride['crawl_mode'] ?? 'classic',
+                    'crawl_type' => $crawlType,
+                    'user-agent' => $configOverride['user_agent'] ?? 'Scouter/2.0 (Crawler by Lokoé; +https://lokoe.fr)'
+                ],
+                'advanced' => [
+                    'respect_robots' => (bool)($configOverride['respect_robots'] ?? true),
+                    'respect_nofollow' => (bool)($configOverride['respect_nofollow'] ?? false),
+                    'respect_canonical' => (bool)($configOverride['respect_canonical'] ?? true),
+                    'follow_redirects' => (bool)($configOverride['follow_redirects'] ?? true),
+                    'retry_failed_urls' => (bool)($configOverride['retry_failed_urls'] ?? true),
+                    'custom_headers' => is_array($configOverride['custom_headers'] ?? null) ? $configOverride['custom_headers'] : [],
+                    'http_auth' => $configOverride['http_auth'] ?? null,
+                    'xPathExtractors' => $xPathExtractors,
+                    'regexExtractors' => $regexExtractors
+                ]
+            ];
+
+            if ($crawlType === 'list') {
+                $sourceConfig['general']['url_list'] = $urls;
+            }
+        }
         
         // Valider que la config source est complète
         if (empty($sourceConfig) || !isset($sourceConfig['general']) || !isset($sourceConfig['general']['start'])) {
@@ -592,7 +691,7 @@ class ProjectController extends Controller
             'status' => 'queued',
             'config' => $sourceConfig,
             'depth_max' => $depthMax,
-            'crawl_type' => $sourceCrawl->crawl_type ?? 'spider',
+            'crawl_type' => $sourceConfig['general']['crawl_type'] ?? ($sourceCrawl->crawl_type ?? 'spider'),
             'in_progress' => 1,
             'project_id' => $projectId
         ]);

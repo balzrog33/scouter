@@ -106,7 +106,12 @@ $projectCategoryIds = array_map(fn($c) => $c->id, $projectCategories);
                 </button>
                 <div class="kebab-dropdown-menu" id="kebab-dropdown-project-<?= $projectId ?>">
                     <?php if($canCreate && $isOwner && $latestCrawl): ?>
-                    <div class="kebab-dropdown-item primary" onclick="duplicateAndStart('<?= htmlspecialchars($latestCrawl->dir) ?>', <?= $project->user_id ?>); event.stopPropagation();">
+                    <div class="kebab-dropdown-item primary" onclick='duplicateAndStart(
+                        <?= json_encode($latestCrawl->dir) ?>,
+                        <?= (int)($project->user_id ?? 0) ?>,
+                        <?= json_encode($latestCrawl->crawl_type ?? 'spider') ?>,
+                        <?= htmlspecialchars(json_encode($latestCrawl->config ?? []), ENT_QUOTES) ?>
+                    ); event.stopPropagation();'>
                         <span class="material-symbols-outlined">refresh</span>
                         <span><?= __('index.new_crawl') ?></span>
                     </div>

@@ -1121,6 +1121,7 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
             }, 100);
             // Reset to first tab
             switchCrawlTab('general');
+            setStartInputLockState(!!(options && options.isDuplicate));
 
             if (options && options.prefillConfig) {
                 applyConfigToModal(options.prefillConfig, options.crawlType || 'spider');
@@ -1196,6 +1197,32 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
             updateExtractorsEmptyState();
         }
         
+        function setStartInputLockState(locked = false) {
+            const startInput = document.getElementById('start_url');
+            const urlListInput = document.getElementById('url_list');
+            const fileInput = document.getElementById('urlFileInput');
+            const fileZone = document.getElementById('fileUploadZone');
+
+            if (startInput) {
+                startInput.readOnly = locked;
+                startInput.classList.toggle('input-locked', locked);
+            }
+
+            if (urlListInput) {
+                urlListInput.readOnly = locked;
+                urlListInput.classList.toggle('input-locked', locked);
+            }
+
+            if (fileInput) {
+                fileInput.disabled = locked;
+            }
+
+            if (fileZone) {
+                fileZone.style.pointerEvents = locked ? 'none' : '';
+                fileZone.style.opacity = locked ? '0.6' : '';
+            }
+        }
+
         function initDefaultExtractors() {
             // Clear existing
             document.getElementById('extractorsList').innerHTML = '';
@@ -1218,6 +1245,7 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
             // Reset UI states
             updateExtractorsEmptyState();
             resetModalDefaults();
+            setStartInputLockState(false);
             const modalTitle = document.getElementById('newProjectModalTitle');
             if (modalTitle) {
                 modalTitle.innerHTML = `<span class="material-symbols-outlined">rocket_launch</span>${defaultNewProjectTitle}`;
@@ -1256,6 +1284,7 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
 
             // Reset follow_redirects
             document.getElementById('follow_redirects').checked = true;
+            setStartInputLockState(false);
         }
 
         // Close modal when clicking outside

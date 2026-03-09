@@ -570,8 +570,9 @@ class ProjectController extends Controller
                 $crawlType = 'spider';
             }
 
-            $startUrl = trim((string)($configOverride['start_url'] ?? ''));
-            $urlListRaw = (string)($configOverride['url_list'] ?? '');
+            // start_url / url_list restent ceux du crawl source (champs non éditables côté UI)
+            $startUrl = (string)($sourceConfig['general']['start'] ?? '');
+            $urlListRaw = '';
             $depthMaxOverride = (int)($configOverride['depth_max'] ?? ($sourceCrawl->depth_max ?? 30));
             $allowedDomains = $configOverride['allowed_domains'] ?? [];
             if (!is_array($allowedDomains)) {
@@ -579,16 +580,25 @@ class ProjectController extends Controller
             }
 
             if ($crawlType === 'list') {
+                $sourceUrlList = $sourceConfig['general']['url_list'] ?? [];
                 $urls = [];
-                foreach (explode("\n", $urlListRaw) as $line) {
-                    $line = trim($line);
-                    if ($line === '') continue;
-                    if (strpos($line, 'http://') !== 0 && strpos($line, 'https://') !== 0) continue;
-                    $urls[] = mb_substr($line, 0, 2083);
+                if (is_array($sourceUrlList)) {
+                    foreach ($sourceUrlList as $line) {
+                        $line = trim((string)$line);
+                        if ($line === '') continue;
+                        if (strpos($line, 'http://') !== 0 && strpos($line, 'https://') !== 0) continue;
+                        $urls[] = mb_substr($line, 0, 2083);
+                    }
                 }
+
+                // Fallback legacy: si pas de liste dans la config source, utiliser la start URL
+                if (empty($urls) && !empty($startUrl)) {
+                    $urls[] = $startUrl;
+                }
+
                 $urls = array_values(array_unique($urls));
                 if (empty($urls)) {
-                    $this->error('Aucune URL valide dans la liste (http:// ou https:// obligatoire)');
+                    $this->error('Le crawl source ne contient pas de liste d\'URLs valide');
                 }
                 $startUrl = $urls[0];
 

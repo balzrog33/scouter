@@ -1714,6 +1714,21 @@ body {
     gap: 0.25rem;
 }
 
+.config-crawl-speed-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 4px;
+    background: rgba(78, 205, 196, 0.1);
+    color: var(--primary-color);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 6px;
+}
+
 .config-depth-badge {
     display: inline-flex;
     align-items: center;

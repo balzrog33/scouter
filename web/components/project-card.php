@@ -206,6 +206,7 @@ $projectCategoryIds = array_map(fn($c) => $c->id, $projectCategories);
                                 <span class="material-symbols-outlined config-icon <?= !empty($crawl->config['advanced']['respect']['nofollow']) ? 'active' : 'inactive' ?>" title="<?= __('index.respect_nofollow') ?>">link_off</span>
                                 <span class="material-symbols-outlined config-icon <?= ($crawl->config['advanced']['follow_redirects'] ?? true) ? 'active' : 'inactive' ?>" title="<?= __('index.follow_redirects') ?>">redo</span>
                                 <?php if (($crawl->crawl_type ?? 'spider') !== 'list'): ?>
+                                    <span class="config-crawl-speed-badge" title="<?= __('index.modal_crawl_speed') ?>"><?= $crawl->config['general']['crawl_speed'] ?? '-' ?></span>
                                     <span class="config-depth-badge" title="<?= __('index.max_depth') ?>"><?= $crawl->config['general']['depthMax'] ?? '-' ?></span>
                                 <?php endif; ?>
                             </div>

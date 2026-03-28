@@ -34,6 +34,14 @@ $isDirectPage = in_array($activeSection, ['categorize', 'config']);
             <span class="icon-rail-label"><?= __('sidebar.explorer') ?></span>
         </div>
 
+        <!-- Crawl Comparison -->
+        <div class="icon-rail-item <?= $activeSection === 'comparison' ? 'active' : '' ?>"
+             data-section="comparison"
+             data-tooltip="<?= __('sidebar.crawl_comparison') ?>">
+            <span class="material-symbols-outlined">compare_arrows</span>
+            <span class="icon-rail-label"><?= __('sidebar.comparison') ?></span>
+        </div>
+
         <!-- Categorize (lien direct) -->
         <?php if ($canManageCurrentProject): ?>
         <a href="?crawl=<?= $crawlId ?>&page=categorize" 
@@ -172,6 +180,111 @@ $isDirectPage = in_array($activeSection, ['categorize', 'config']);
         </div>
     </div>
     
+    <!-- Section Crawl Comparison -->
+    <div class="sidebar-panel-section" data-section="comparison" style="<?= $activeSection !== 'comparison' ? 'display: none;' : '' ?>">
+        <div class="sidebar-panel-header">
+            <span class="material-symbols-outlined">compare_arrows</span>
+            <span><?= __('sidebar.crawl_comparison') ?></span>
+            <button class="sidebar-panel-close" onclick="closeSidebarPanel()">
+                <span class="material-symbols-outlined">chevron_left</span>
+            </button>
+        </div>
+
+        <!-- Vue d'ensemble -->
+        <div class="sidebar-panel-group">
+            <a href="?crawl=<?= $crawlId ?>&page=comparison-overview<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'comparison-overview' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">dashboard</span>
+                <span><?= __('sidebar.overview') ?></span>
+            </a>
+            <a href="?crawl=<?= $crawlId ?>&page=new-urls<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'new-urls' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">add_circle</span>
+                <span><?= __('sidebar.new_urls') ?></span>
+            </a>
+            <a href="?crawl=<?= $crawlId ?>&page=lost-urls<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'lost-urls' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">remove_circle</span>
+                <span><?= __('sidebar.lost_urls') ?></span>
+            </a>
+        </div>
+
+        <!-- Accessibilité & Moteur -->
+        <div class="sidebar-panel-group">
+            <div class="sidebar-panel-group-title"><?= __('sidebar.engine_accessibility') ?></div>
+            <a href="?crawl=<?= $crawlId ?>&page=accessibility-comparison<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'accessibility-comparison' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">folder</span>
+                <span><?= __('sidebar.indexability') ?></span>
+            </a>
+            <a href="?crawl=<?= $crawlId ?>&page=code-changes<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'code-changes' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">http</span>
+                <span><?= __('sidebar.response_codes') ?></span>
+            </a>
+            <a href="?crawl=<?= $crawlId ?>&page=depth-comparison<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'depth-comparison' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">layers</span>
+                <span><?= __('sidebar.depth_levels') ?></span>
+            </a>
+        </div>
+
+        <!-- Contenu -->
+        <div class="sidebar-panel-group">
+            <div class="sidebar-panel-group-title"><?= __('sidebar.content') ?></div>
+            <a href="?crawl=<?= $crawlId ?>&page=seo-tags-comparison<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'seo-tags-comparison' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">label</span>
+                <span><?= __('sidebar.seo_tags') ?></span>
+            </a>
+            <a href="?crawl=<?= $crawlId ?>&page=headings-comparison<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'headings-comparison' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">format_h1</span>
+                <span><?= __('sidebar.heading_hierarchy') ?></span>
+            </a>
+            <a href="?crawl=<?= $crawlId ?>&page=content-richness-comparison<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'content-richness-comparison' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">format_size</span>
+                <span><?= __('sidebar.content_richness') ?></span>
+            </a>
+            <a href="?crawl=<?= $crawlId ?>&page=duplication-comparison<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'duplication-comparison' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">content_copy</span>
+                <span><?= __('sidebar.duplication') ?></span>
+            </a>
+            <a href="?crawl=<?= $crawlId ?>&page=structured-data-comparison<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'structured-data-comparison' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">data_object</span>
+                <span><?= __('sidebar.structured_data') ?></span>
+            </a>
+        </div>
+
+        <!-- Maillage -->
+        <div class="sidebar-panel-group">
+            <div class="sidebar-panel-group-title"><?= __('sidebar.linking') ?></div>
+            <a href="?crawl=<?= $crawlId ?>&page=inlinks-comparison<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'inlinks-comparison' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">link</span>
+                <span><?= __('sidebar.inlinks') ?></span>
+            </a>
+            <a href="?crawl=<?= $crawlId ?>&page=outlinks-comparison<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'outlinks-comparison' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">open_in_new</span>
+                <span><?= __('sidebar.outlinks') ?></span>
+            </a>
+            <a href="?crawl=<?= $crawlId ?>&page=pagerank-comparison<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'pagerank-comparison' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">star</span>
+                <span><?= __('sidebar.pagerank') ?></span>
+            </a>
+            <a href="?crawl=<?= $crawlId ?>&page=pagerank-leak-comparison<?= $compareId ? '&compare=' . $compareId : '' ?>"
+               class="sidebar-panel-item <?= $page === 'pagerank-leak-comparison' ? 'active' : '' ?>">
+                <span class="material-symbols-outlined">sprint</span>
+                <span><?= __('sidebar.pagerank_leak') ?></span>
+            </a>
+        </div>
+    </div>
+
     <!-- Section Data Explorer -->
     <div class="sidebar-panel-section" data-section="explorer" style="<?= $activeSection !== 'explorer' ? 'display: none;' : '' ?>">
         <div class="sidebar-panel-header">
@@ -274,6 +387,21 @@ function openSidebarPanel() {
             sidebarPanel.classList.add('scrollable');
         }
     }, 300);
+}
+
+// Changer le crawl de comparaison
+function changeCompareCrawl(compareId) {
+    const url = new URL(window.location);
+    if (compareId) {
+        url.searchParams.set('compare', compareId);
+    } else {
+        url.searchParams.delete('compare');
+    }
+    const currentPage = url.searchParams.get('page');
+    if (!['comparison-overview', 'new-urls', 'lost-urls'].includes(currentPage)) {
+        url.searchParams.set('page', 'comparison-overview');
+    }
+    window.location = url.toString();
 }
 
 // Restaurer l'état au chargement

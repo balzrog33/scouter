@@ -58,15 +58,20 @@ class QueryController extends Controller
             $this->error('Requête ou projet manquant');
         }
         
-        $this->auth->requireCrawlAccess($projectDir, true);
-        
-        $crawlRecord = CrawlDatabase::getCrawlByPath($projectDir);
+        if (is_numeric($projectDir)) {
+            $this->auth->requireCrawlAccessById((int)$projectDir, true);
+            $crawlRecord = CrawlDatabase::getCrawlById((int)$projectDir);
+        } else {
+            $this->auth->requireCrawlAccess($projectDir, true);
+            $crawlRecord = CrawlDatabase::getCrawlByPath($projectDir);
+        }
+
         if (!$crawlRecord) {
             Response::notFound('Projet non trouvé');
         }
-        
+
         $crawlId = $crawlRecord->id;
-        
+
         // SÉCURITÉ : Vérifier que SEULES les requêtes SELECT sont autorisées
         $queryUpper = strtoupper(trim($query));
         
@@ -86,11 +91,34 @@ class QueryController extends Controller
             }
         }
         
-        // Transformer les tables virtuelles
-        $transformedQuery = $query;
+        // Transformer les références multi-crawl (syntaxe table@ID)
+        // categories@ID is a no-op since categories are now project-level
+        $referencedCrawlIds = [];
+        $transformedQuery = preg_replace_callback(
+            '/\b(pages|links|duplicate_clusters|page_schemas|redirect_chains)@(\d+)\b/i',
+            function($matches) use (&$referencedCrawlIds) {
+                $referencedCrawlIds[] = (int)$matches[2];
+                return $matches[1] . '_' . $matches[2];
+            },
+            $query
+        );
+        // categories@ID → crawl_categories (project-level, no partition)
+        $transformedQuery = preg_replace('/\bcategories@\d+\b/i', 'crawl_categories', $transformedQuery);
+
+        // Valider que les crawl IDs référencés appartiennent au même projet
+        if (!empty($referencedCrawlIds)) {
+            foreach (array_unique($referencedCrawlIds) as $refId) {
+                $refCrawl = CrawlDatabase::getCrawlById($refId);
+                if (!$refCrawl || $refCrawl->project_id !== $crawlRecord->project_id) {
+                    Response::forbidden("Cannot query crawl {$refId}: not in the same project.");
+                }
+            }
+        }
+
+        // Transformer les tables virtuelles restantes vers le crawl courant
         $transformedQuery = preg_replace('/\bpages\b(?!_\d)/i', "pages_{$crawlId}", $transformedQuery);
         $transformedQuery = preg_replace('/\blinks\b(?!_\d)/i', "links_{$crawlId}", $transformedQuery);
-        $transformedQuery = preg_replace('/\bcategories\b(?!_\d)/i', "categories_{$crawlId}", $transformedQuery);
+        $transformedQuery = preg_replace('/(?<!crawl_)\bcategories\b(?!_\d)/i', "crawl_categories", $transformedQuery);
         $transformedQuery = preg_replace('/\bduplicate_clusters\b(?!_\d)/i', "duplicate_clusters_{$crawlId}", $transformedQuery);
         $transformedQuery = preg_replace('/\bpage_schemas\b(?!_\d)/i', "page_schemas_{$crawlId}", $transformedQuery);
         
@@ -149,11 +177,11 @@ class QueryController extends Controller
         
         $crawlId = $crawlRecord->id;
         
-        // Charger les catégories
+        // Charger les catégories (project-level)
         $categoriesMap = [];
         $categoryColors = [];
-        $stmt = $this->db->prepare("SELECT id, cat, color FROM categories WHERE crawl_id = :crawl_id");
-        $stmt->execute([':crawl_id' => $crawlId]);
+        $stmt = $this->db->prepare("SELECT id, cat, color FROM crawl_categories WHERE project_id = :project_id");
+        $stmt->execute([':project_id' => $crawlRecord->project_id]);
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $categoriesMap[$row['id']] = $row['cat'];
             $categoryColors[$row['cat']] = $row['color'];
@@ -256,7 +284,7 @@ class QueryController extends Controller
             Response::notFound('Page not found');
         }
 
-        return ['crawlId' => $crawlId, 'pageId' => $page['id']];
+        return ['crawlId' => $crawlId, 'pageId' => $page['id'], 'projectId' => $crawlRecord->project_id];
     }
 
     /**
@@ -266,11 +294,11 @@ class QueryController extends Controller
     {
         $ctx = $this->resolvePageContext($request);
 
-        // Charger les catégories
+        // Charger les catégories (project-level)
         $categoriesMap = [];
         $categoryColors = [];
-        $stmt = $this->db->prepare("SELECT id, cat, color FROM categories WHERE crawl_id = :crawl_id");
-        $stmt->execute([':crawl_id' => $ctx['crawlId']]);
+        $stmt = $this->db->prepare("SELECT id, cat, color FROM crawl_categories WHERE project_id = :project_id");
+        $stmt->execute([':project_id' => $ctx['projectId']]);
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $categoriesMap[$row['id']] = $row['cat'];
             $categoryColors[$row['cat']] = $row['color'];
@@ -302,11 +330,11 @@ class QueryController extends Controller
     {
         $ctx = $this->resolvePageContext($request);
 
-        // Charger les catégories
+        // Charger les catégories (project-level)
         $categoriesMap = [];
         $categoryColors = [];
-        $stmt = $this->db->prepare("SELECT id, cat, color FROM categories WHERE crawl_id = :crawl_id");
-        $stmt->execute([':crawl_id' => $ctx['crawlId']]);
+        $stmt = $this->db->prepare("SELECT id, cat, color FROM crawl_categories WHERE project_id = :project_id");
+        $stmt->execute([':project_id' => $ctx['projectId']]);
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $categoriesMap[$row['id']] = $row['cat'];
             $categoryColors[$row['cat']] = $row['color'];

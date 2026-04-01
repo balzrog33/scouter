@@ -40,7 +40,7 @@ function getCodeDisplayValue($code) {
 // Fonction globale pour obtenir la couleur d'une catégorie
 function getCategoryColor($category) {
     $categoryColors = $GLOBALS['categoryColors'] ?? [];
-    if(empty($category) || $category === 'N/A' || $category === __('common.uncategorized') || $category === 'Non catégorisé') {
+    if(empty($category) || $category === 'N/A' || $category === __('common.uncategorized')) {
         return '#95a5a6';
     }
     return $categoryColors[$category] ?? '#95a5a6';
@@ -111,14 +111,25 @@ $projectDir = $crawlRecord->path ?? $crawlRecord->id;
 // ID du crawl pour les requêtes partitionnées
 $crawlId = $crawlRecord->id;
 
+// Paramètre de comparaison de crawl
+$compareId = isset($_GET['compare']) ? (int)$_GET['compare'] : null;
+$compareRecord = null;
+if ($compareId) {
+    $compareRecord = CrawlDatabase::getCrawlById($compareId);
+    if (!$compareRecord) {
+        $compareId = null;
+        $compareRecord = null;
+    }
+}
+
 // ============================================
 // CHARGEMENT CENTRALISÉ DES CATÉGORIES
 // Évite les jointures sur la table categories partout
 // ============================================
 $categoriesMap = [];
 $categoryColors = [];
-$stmt = $pdo->prepare("SELECT id, cat, color FROM categories WHERE crawl_id = :crawl_id");
-$stmt->execute([':crawl_id' => $crawlId]);
+$stmt = $pdo->prepare("SELECT id, cat, color FROM crawl_categories WHERE project_id = :project_id");
+$stmt->execute([':project_id' => $crawlRecord->project_id]);
 while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     $categoriesMap[$row['id']] = [
         'cat' => $row['cat'],
@@ -132,6 +143,10 @@ $GLOBALS['categoryColors'] = $categoryColors;
 // Charger les statistiques globales
 $crawlRepo = new CrawlRepository();
 $globalStats = $crawlRecord;
+
+// Extraire le flag store_html depuis la config du crawl
+$crawlConfigRaw = is_string($crawlRecord->config ?? '{}') ? json_decode($crawlRecord->config ?? '{}', true) : ($crawlRecord->config ?? []);
+$storeHtml = $crawlConfigRaw['advanced']['store_html'] ?? true;
 
 // Récupération de la page actuelle
 $page = isset($_GET['page']) ? $_GET['page'] : 'home';
@@ -208,6 +223,79 @@ try {
     $domainCrawls = [];
 }
 
+// Auto-sélectionner le crawl de comparaison si non spécifié
+// Priorité : crawl précédent (plus ancien), sinon crawl suivant (plus récent)
+if (!$compareId && !empty($domainCrawls)) {
+    $currentIndex = null;
+    foreach ($domainCrawls as $i => $dc) {
+        if ($dc['crawl_id'] == $crawlId) {
+            $currentIndex = $i;
+            break;
+        }
+    }
+
+    if ($currentIndex !== null) {
+        // Essayer le crawl précédent (index suivant car trié par date desc)
+        if (isset($domainCrawls[$currentIndex + 1])) {
+            $compareId = (int)$domainCrawls[$currentIndex + 1]['crawl_id'];
+            $compareRecord = CrawlDatabase::getCrawlById($compareId);
+        }
+        // Sinon essayer le crawl suivant (index précédent car trié par date desc)
+        elseif (isset($domainCrawls[$currentIndex - 1])) {
+            $compareId = (int)$domainCrawls[$currentIndex - 1]['crawl_id'];
+            $compareRecord = CrawlDatabase::getCrawlById($compareId);
+        }
+    }
+}
+
+// Flag store_html du crawl de comparaison
+$compareStoreHtml = true;
+if ($compareRecord) {
+    $compareConfigRaw = is_string($compareRecord->config ?? '{}') ? json_decode($compareRecord->config ?? '{}', true) : ($compareRecord->config ?? []);
+    $compareStoreHtml = $compareConfigRaw['advanced']['store_html'] ?? true;
+}
+
+// Pré-calculer les scorecards de comparaison une seule fois (utilisés par toutes les pages comparison)
+$comparisonScorecardsComputed = false;
+$compNewCount = 0;
+$compLostCount = 0;
+$compCommonCount = 0;
+
+$comparisonPages = ['comparison-overview', 'new-urls', 'lost-urls', 'code-changes', 'depth-comparison', 'accessibility-comparison', 'seo-tags-comparison', 'headings-comparison', 'content-richness-comparison', 'duplication-comparison', 'structured-data-comparison', 'inlinks-comparison', 'outlinks-comparison', 'pagerank-comparison', 'pagerank-leak-comparison'];
+
+if ($compareId && in_array($page ?? '', $comparisonPages)) {
+    $comparisonScorecardsComputed = true;
+    $safeCompId = intval($compareId);
+    $safeCrId = intval($crawlId);
+
+    // New URLs: dans current, pas dans compare (NOT EXISTS est O(n) vs NOT IN qui est O(n²))
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) FROM pages a
+        WHERE a.crawl_id = :current AND a.crawled = true
+        AND NOT EXISTS (SELECT 1 FROM pages b WHERE b.crawl_id = :compare AND b.crawled = true AND b.url = a.url)
+    ");
+    $stmt->execute([':current' => $safeCrId, ':compare' => $safeCompId]);
+    $compNewCount = (int)$stmt->fetchColumn();
+
+    // Lost URLs: dans compare, pas dans current
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) FROM pages a
+        WHERE a.crawl_id = :compare AND a.crawled = true
+        AND NOT EXISTS (SELECT 1 FROM pages b WHERE b.crawl_id = :current AND b.crawled = true AND b.url = a.url)
+    ");
+    $stmt->execute([':compare' => $safeCompId, ':current' => $safeCrId]);
+    $compLostCount = (int)$stmt->fetchColumn();
+
+    // Common URLs
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) FROM pages a
+        WHERE a.crawl_id = :current AND a.crawled = true
+        AND EXISTS (SELECT 1 FROM pages b WHERE b.crawl_id = :compare AND b.crawled = true AND b.url = a.url)
+    ");
+    $stmt->execute([':current' => $safeCrId, ':compare' => $safeCompId]);
+    $compCommonCount = (int)$stmt->fetchColumn();
+}
+
 // Lire l'état des sections depuis les cookies
 function isSectionCollapsed($sectionName) {
     $cookieName = 'sidebar-' . $sectionName;
@@ -265,11 +353,13 @@ function isSectionCollapsed($sectionName) {
     $activeSection = null; // Pas de défaut, on détermine précisément
     $reportPages = ['home', 'categories', 'codes', 'response-time', 'depth', 'redirect-chains', 'inlinks', 'outlinks', 'pagerank', 'seo-tags', 'headings', 'duplication', 'extractions', 'structured-data'];
     $explorerPages = ['url-explorer', 'link-explorer', 'sql-explorer'];
-    
+
     if (in_array($page, $reportPages)) {
         $activeSection = 'report';
     } elseif (in_array($page, $explorerPages)) {
         $activeSection = 'explorer';
+    } elseif (in_array($page, $comparisonPages)) {
+        $activeSection = 'comparison';
     } elseif ($page === 'categorize') {
         $activeSection = 'categorize';
     } elseif ($page === 'config') {
@@ -377,6 +467,51 @@ function isSectionCollapsed($sectionName) {
                         include 'pages/categorize.php';
                     }
                     break;
+                case 'comparison-overview':
+                    include 'pages/comparison-overview.php';
+                    break;
+                case 'new-urls':
+                    include 'pages/new-urls.php';
+                    break;
+                case 'lost-urls':
+                    include 'pages/lost-urls.php';
+                    break;
+                case 'code-changes':
+                    include 'pages/code-changes.php';
+                    break;
+                case 'depth-comparison':
+                    include 'pages/depth-comparison.php';
+                    break;
+                case 'accessibility-comparison':
+                    include 'pages/accessibility-comparison.php';
+                    break;
+                case 'seo-tags-comparison':
+                    include 'pages/seo-tags-comparison.php';
+                    break;
+                case 'headings-comparison':
+                    include 'pages/headings-comparison.php';
+                    break;
+                case 'content-richness-comparison':
+                    include 'pages/content-richness-comparison.php';
+                    break;
+                case 'duplication-comparison':
+                    include 'pages/duplication-comparison.php';
+                    break;
+                case 'structured-data-comparison':
+                    include 'pages/structured-data-comparison.php';
+                    break;
+                case 'inlinks-comparison':
+                    include 'pages/inlinks-comparison.php';
+                    break;
+                case 'outlinks-comparison':
+                    include 'pages/outlinks-comparison.php';
+                    break;
+                case 'pagerank-comparison':
+                    include 'pages/pagerank-comparison.php';
+                    break;
+                case 'pagerank-leak-comparison':
+                    include 'pages/pagerank-leak-comparison.php';
+                    break;
                 case 'config':
                     // SÉCURITÉ: Vérifier les droits de gestion
                     if (!$canManageCurrentProject) {
@@ -397,7 +532,7 @@ function isSectionCollapsed($sectionName) {
     <script src="assets/confirm-modal.js"></script>
     <script src="assets/crawl-panel.js?v=<?= time() ?>"></script>
     <script src="assets/app.js"></script>
-    <script src="assets/url-modal-handler.js"></script>
+    <script src="assets/url-modal-handler.js?v=<?= time() ?>"></script>
     
     <?php include 'components/url-details-modal.php'; ?>
     <?php include 'components/quick-search.php'; ?>

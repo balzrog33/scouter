@@ -58,44 +58,114 @@ class QueryController extends Controller
             $this->error('Requête ou projet manquant');
         }
         
-        $this->auth->requireCrawlAccess($projectDir, true);
-        
-        $crawlRecord = CrawlDatabase::getCrawlByPath($projectDir);
+        if (is_numeric($projectDir)) {
+            $this->auth->requireCrawlAccessById((int)$projectDir, true);
+            $crawlRecord = CrawlDatabase::getCrawlById((int)$projectDir);
+        } else {
+            $this->auth->requireCrawlAccess($projectDir, true);
+            $crawlRecord = CrawlDatabase::getCrawlByPath($projectDir);
+        }
+
         if (!$crawlRecord) {
             Response::notFound('Projet non trouvé');
         }
-        
+
         $crawlId = $crawlRecord->id;
-        
-        // SÉCURITÉ : Vérifier que SEULES les requêtes SELECT sont autorisées
-        $queryUpper = strtoupper(trim($query));
-        
-        $forbiddenKeywords = [
-            'INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER', 
-            'TRUNCATE', 'REPLACE', 'RENAME', 'ATTACH', 'DETACH',
-            'VACUUM', 'REINDEX', 'GRANT', 'REVOKE'
-        ];
-        
+
+        // SÉCURITÉ : Nettoyage et validation stricte
+        $queryClean = preg_replace('/\/\*.*?\*\//s', ' ', $query); // strip block comments
+        $queryClean = preg_replace('/--.*$/m', ' ', $queryClean);  // strip line comments
+        $queryUpper = strtoupper(trim($queryClean));
+
         if (strpos($queryUpper, 'SELECT') !== 0) {
             Response::forbidden('Seules les requêtes SELECT sont autorisées.');
         }
-        
+
+        // Block multi-statement attacks
+        if (preg_match('/;\s*(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE|COPY|SET|DO|CALL)/i', $queryClean)) {
+            Response::forbidden('Requête multi-statement interdite.');
+        }
+
+        $forbiddenKeywords = [
+            'INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER',
+            'TRUNCATE', 'REPLACE', 'RENAME', 'ATTACH', 'DETACH',
+            'VACUUM', 'REINDEX', 'GRANT', 'REVOKE', 'COPY'
+        ];
         foreach ($forbiddenKeywords as $keyword) {
-            if (preg_match('/\b' . $keyword . '\b/i', $query)) {
+            if (preg_match('/\b' . $keyword . '\b/i', $queryClean)) {
                 Response::forbidden('Requête interdite : opération de modification détectée (' . $keyword . ').');
             }
         }
+
+        // Block dangerous PostgreSQL functions
+        $forbiddenFunctions = [
+            'pg_sleep', 'pg_read_file', 'pg_read_binary_file', 'pg_ls_dir',
+            'pg_stat_file', 'lo_import', 'lo_export', 'dblink',
+            'pg_advisory_lock', 'pg_terminate_backend', 'pg_cancel_backend',
+            'set_config', 'current_setting'
+        ];
+        foreach ($forbiddenFunctions as $fn) {
+            if (preg_match('/\b' . preg_quote($fn, '/') . '\s*\(/i', $queryClean)) {
+                Response::forbidden('Fonction interdite : ' . $fn);
+            }
+        }
+
+        // Block access to system/auth tables (including quoted identifiers)
+        $cleanForTableCheck = str_replace('"', '', $queryClean); // strip quotes to catch "users"
+        if (preg_match('/\b(pg_catalog|information_schema|pg_roles|pg_authid|pg_shadow|users)\b/i', $cleanForTableCheck)) {
+            Response::forbidden('Accès aux tables système interdit.');
+        }
+
+        // Block PREPARE/EXECUTE, WITH RECURSIVE, EXPLAIN, COPY TO PROGRAM
+        if (preg_match('/\b(PREPARE|EXECUTE|EXPLAIN|WITH\s+RECURSIVE)\b/i', $queryClean)) {
+            Response::forbidden('Instruction interdite.');
+        }
+        if (preg_match('/COPY\s+.*\s+TO\s+PROGRAM/i', $queryClean)) {
+            Response::forbidden('COPY TO PROGRAM interdit.');
+        }
         
-        // Transformer les tables virtuelles
-        $transformedQuery = $query;
+        // Transformer les références multi-crawl (syntaxe table@ID)
+        // categories@ID is a no-op since categories are now project-level
+        $referencedCrawlIds = [];
+        $transformedQuery = preg_replace_callback(
+            '/\b(pages|links|duplicate_clusters|page_schemas|redirect_chains)@(\d+)\b/i',
+            function($matches) use (&$referencedCrawlIds) {
+                $referencedCrawlIds[] = (int)$matches[2];
+                return $matches[1] . '_' . $matches[2];
+            },
+            $queryClean
+        );
+        // categories@ID → crawl_categories (project-level, no partition)
+        $transformedQuery = preg_replace('/\bcategories@\d+\b/i', 'crawl_categories', $transformedQuery);
+
+        // Valider que les crawl IDs référencés appartiennent au même projet
+        if (!empty($referencedCrawlIds)) {
+            foreach (array_unique($referencedCrawlIds) as $refId) {
+                $refCrawl = CrawlDatabase::getCrawlById($refId);
+                if (!$refCrawl || $refCrawl->project_id !== $crawlRecord->project_id) {
+                    Response::forbidden("Cannot query crawl {$refId}: not in the same project.");
+                }
+            }
+        }
+
+        // Transformer les tables virtuelles restantes vers le crawl courant
         $transformedQuery = preg_replace('/\bpages\b(?!_\d)/i', "pages_{$crawlId}", $transformedQuery);
         $transformedQuery = preg_replace('/\blinks\b(?!_\d)/i', "links_{$crawlId}", $transformedQuery);
-        $transformedQuery = preg_replace('/\bcategories\b(?!_\d)/i', "categories_{$crawlId}", $transformedQuery);
+        $transformedQuery = preg_replace('/(?<!crawl_)\bcategories\b(?!_\d)/i', "crawl_categories", $transformedQuery);
         $transformedQuery = preg_replace('/\bduplicate_clusters\b(?!_\d)/i', "duplicate_clusters_{$crawlId}", $transformedQuery);
         $transformedQuery = preg_replace('/\bpage_schemas\b(?!_\d)/i', "page_schemas_{$crawlId}", $transformedQuery);
         
+        // Force a LIMIT if none present (max 10000 rows)
+        if (!preg_match('/\bLIMIT\s+\d/i', $transformedQuery)) {
+            $transformedQuery .= ' LIMIT 10000';
+        }
+
+        // Security: read-only transaction + timeout
+        $this->db->exec("SET statement_timeout = '10s'");
+        $this->db->exec("SET TRANSACTION READ ONLY");
         $stmt = $this->db->query($transformedQuery);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->db->exec("SET statement_timeout = '0'");
         
         $columns = [];
         if (!empty($rows)) {
@@ -149,11 +219,11 @@ class QueryController extends Controller
         
         $crawlId = $crawlRecord->id;
         
-        // Charger les catégories
+        // Charger les catégories (project-level)
         $categoriesMap = [];
         $categoryColors = [];
-        $stmt = $this->db->prepare("SELECT id, cat, color FROM categories WHERE crawl_id = :crawl_id");
-        $stmt->execute([':crawl_id' => $crawlId]);
+        $stmt = $this->db->prepare("SELECT id, cat, color FROM crawl_categories WHERE project_id = :project_id");
+        $stmt->execute([':project_id' => $crawlRecord->project_id]);
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $categoriesMap[$row['id']] = $row['cat'];
             $categoryColors[$row['cat']] = $row['color'];
@@ -256,7 +326,7 @@ class QueryController extends Controller
             Response::notFound('Page not found');
         }
 
-        return ['crawlId' => $crawlId, 'pageId' => $page['id']];
+        return ['crawlId' => $crawlId, 'pageId' => $page['id'], 'projectId' => $crawlRecord->project_id];
     }
 
     /**
@@ -266,11 +336,11 @@ class QueryController extends Controller
     {
         $ctx = $this->resolvePageContext($request);
 
-        // Charger les catégories
+        // Charger les catégories (project-level)
         $categoriesMap = [];
         $categoryColors = [];
-        $stmt = $this->db->prepare("SELECT id, cat, color FROM categories WHERE crawl_id = :crawl_id");
-        $stmt->execute([':crawl_id' => $ctx['crawlId']]);
+        $stmt = $this->db->prepare("SELECT id, cat, color FROM crawl_categories WHERE project_id = :project_id");
+        $stmt->execute([':project_id' => $ctx['projectId']]);
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $categoriesMap[$row['id']] = $row['cat'];
             $categoryColors[$row['cat']] = $row['color'];
@@ -302,11 +372,11 @@ class QueryController extends Controller
     {
         $ctx = $this->resolvePageContext($request);
 
-        // Charger les catégories
+        // Charger les catégories (project-level)
         $categoriesMap = [];
         $categoryColors = [];
-        $stmt = $this->db->prepare("SELECT id, cat, color FROM categories WHERE crawl_id = :crawl_id");
-        $stmt->execute([':crawl_id' => $ctx['crawlId']]);
+        $stmt = $this->db->prepare("SELECT id, cat, color FROM crawl_categories WHERE project_id = :project_id");
+        $stmt->execute([':project_id' => $ctx['projectId']]);
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $categoriesMap[$row['id']] = $row['cat'];
             $categoryColors[$row['cat']] = $row['color'];

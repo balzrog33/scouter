@@ -97,6 +97,7 @@ $userInitials = getUserInitials($currentUserEmail);
                         <div class="crawl-item-main">
                             <div class="crawl-item-date">
                                 <?= $crawlDate ? $crawlDate->format('d/m/Y H:i') : __('header.date_unknown') ?>
+                                <span class="crawl-item-id">#<?= $crawl['crawl_id'] ?></span>
                             </div>
                             <?php if ($isActiveCrawl): ?>
                                 <span class="crawl-item-badge"><?= __('header.badge_current') ?></span>
@@ -129,10 +130,10 @@ $userInitials = getUserInitials($currentUserEmail);
     <!-- Actions à droite -->
     <div class="header-actions">
         <?php if ($headerContext === 'dashboard' || $headerContext === 'monitor'): ?>
-        <!-- Ghost link : Retour aux projets -->
-        <a href="<?= $basePath ?>index.php" class="header-back-link">
+        <!-- Ghost link : Retour au projet -->
+        <a href="<?= $basePath ?>project.php?id=<?= $crawlRecord->project_id ?? '' ?>" class="header-back-link">
             <span class="material-symbols-outlined">arrow_back</span>
-            <?= __('header.projects') ?>
+            <?= __('header.project') ?>
         </a>
         <?php endif; ?>
         

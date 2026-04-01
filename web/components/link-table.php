@@ -417,13 +417,13 @@ if ($needsSourceCatJoinForSort) {
     if (!$hasSourceFilter && !$needsSourceJoinForSort) {
         $joinClauses .= " LEFT JOIN pages cs ON l.src = cs.id AND cs.crawl_id = $crawlIdInt";
     }
-    $joinClauses .= " LEFT JOIN categories cats ON cs.cat_id = cats.id";
+    $joinClauses .= " LEFT JOIN crawl_categories cats ON cs.cat_id = cats.id";
 }
 if ($needsTargetCatJoinForSort) {
     if (!$hasTargetFilter && !$needsTargetJoinForSort) {
         $joinClauses .= " LEFT JOIN pages ct ON l.target = ct.id AND ct.crawl_id = $crawlIdInt";
     }
-    $joinClauses .= " LEFT JOIN categories catt ON ct.cat_id = catt.id";
+    $joinClauses .= " LEFT JOIN crawl_categories catt ON ct.cat_id = catt.id";
 }
 
 // Si on a besoin d'une jointure pour le tri, on doit passer en mode avec jointure
@@ -573,7 +573,7 @@ foreach ($linksRaw as $link) {
         
         // Catégorie source
         $srcCatId = $srcPage['cat_id'];
-        $row->source_category = isset($categoriesMap[$srcCatId]) ? $categoriesMap[$srcCatId]['cat'] : 'Non catégorisé';
+        $row->source_category = isset($categoriesMap[$srcCatId]) ? $categoriesMap[$srcCatId]['cat'] : __('common.uncategorized');
         $row->source_category_color = isset($categoriesMap[$srcCatId]) ? $categoriesMap[$srcCatId]['color'] : null;
         
         // Extracteurs source (JSONB)
@@ -621,7 +621,7 @@ foreach ($linksRaw as $link) {
         
         // Catégorie target
         $targetCatId = $targetPage['cat_id'];
-        $row->target_category = isset($categoriesMap[$targetCatId]) ? $categoriesMap[$targetCatId]['cat'] : 'Non catégorisé';
+        $row->target_category = isset($categoriesMap[$targetCatId]) ? $categoriesMap[$targetCatId]['cat'] : __('common.uncategorized');
         $row->target_category_color = isset($categoriesMap[$targetCatId]) ? $categoriesMap[$targetCatId]['color'] : null;
         
         // Extracteurs target (JSONB)

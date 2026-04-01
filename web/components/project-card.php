@@ -99,7 +99,10 @@ $projectCategoryIds = array_map(fn($c) => $c->id, $projectCategories);
                 </button>
                 <div class="kebab-dropdown-menu" id="kebab-dropdown-project-<?= $projectId ?>">
                     <?php if($canCreate && $isOwner && $latestCrawl): ?>
-                    <div class="kebab-dropdown-item primary" onclick="duplicateAndStart('<?= htmlspecialchars($latestCrawl->dir) ?>', <?= $project->user_id ?>); event.stopPropagation();">
+                    <div class="kebab-dropdown-item primary"
+                         data-crawl-config="<?= htmlspecialchars(json_encode($latestCrawl->config ?? []), ENT_QUOTES, 'UTF-8') ?>"
+                         data-target-user="<?= (int)$project->user_id ?>"
+                         onclick="openReCrawlModal(JSON.parse(this.dataset.crawlConfig), parseInt(this.dataset.targetUser)); event.stopPropagation();">
                         <span class="material-symbols-outlined">refresh</span>
                         <span><?= __('index.new_crawl') ?></span>
                     </div>
@@ -194,6 +197,22 @@ $projectCategoryIds = array_map(fn($c) => $c->id, $projectCategories);
                                 <span class="material-symbols-outlined config-icon <?= (!empty($crawl->config['advanced']['respect']['nofollow']) || !empty($crawl->config['advanced']['respect_nofollow'])) ? 'active' : 'inactive' ?>" title="<?= __('index.respect_nofollow') ?>">link_off</span>
                                 <span class="material-symbols-outlined config-icon <?= ($crawl->config['advanced']['follow_redirects'] ?? true) ? 'active' : 'inactive' ?>" title="<?= __('index.follow_redirects') ?>">redo</span>
                                 <span class="material-symbols-outlined config-icon <?= ($crawl->config['advanced']['store_html'] ?? true) ? 'active' : 'inactive' ?>" title="<?= __('index.store_html') ?>">code</span>
+                                <?php
+                                $speed = $crawl->config['general']['crawl_speed'] ?? 'fast';
+                                $speedIcon = match($speed) {
+                                    'very_slow' => 'hourglass_top',
+                                    'slow'      => 'pace',
+                                    'unlimited' => 'bolt',
+                                    default     => 'speed'
+                                };
+                                $speedTitle = match($speed) {
+                                    'very_slow' => __('index.modal_speed_very_slow'),
+                                    'slow'      => __('index.modal_speed_slow'),
+                                    'unlimited' => __('index.modal_speed_unlimited'),
+                                    default     => __('index.modal_speed_fast')
+                                };
+                                ?>
+                                <span class="material-symbols-outlined config-icon active" title="<?= $speedTitle ?>"><?= $speedIcon ?></span>
                                 <?php if (($crawl->crawl_type ?? 'spider') !== 'list'): ?>
                                     <span class="config-depth-badge" title="<?= __('index.max_depth') ?>"><?= $crawl->config['general']['depthMax'] ?? '-' ?></span>
                                 <?php endif; ?>

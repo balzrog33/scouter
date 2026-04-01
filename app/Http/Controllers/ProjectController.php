@@ -209,7 +209,15 @@ class ProjectController extends Controller
         }
 
         // Créer ou récupérer le projet pour ce domaine
-        $projectId = $this->projects->getOrCreate($this->userId, $domain);
+        // L'admin peut créer un crawl pour un autre utilisateur (ex: relance depuis un projet partagé)
+        $targetUserId = $this->userId;
+        if ($this->auth->isAdmin()) {
+            $requestedUserId = (int)$request->get('target_user_id', 0);
+            if ($requestedUserId > 0) {
+                $targetUserId = $requestedUserId;
+            }
+        }
+        $projectId = $this->projects->getOrCreate($targetUserId, $domain);
 
         // Générer le path unique pour ce crawl
         $projectDir = $domain . '-' . date('Ymd') . '-' . date('His');

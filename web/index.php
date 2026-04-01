@@ -679,6 +679,120 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
             // Add default extractors
             initDefaultExtractors();
         }
+
+        // ============================================
+        // RELANCER UN CRAWL AVEC CONFIG PRÉ-REMPLIE
+        // ============================================
+        let reCrawlTargetUserId = null;
+
+        function openReCrawlModal(config, targetUserId = null) {
+            reCrawlTargetUserId = targetUserId;
+
+            const general  = config.general  || {};
+            const advanced = config.advanced  || {};
+            const crawlType = general.crawl_type || 'spider';
+
+            // Open and reset
+            document.getElementById('newProjectModal').style.display = 'flex';
+            switchCrawlTab('general');
+            document.getElementById('extractorsList').innerHTML = '';
+            extractorCounter = 0;
+            document.getElementById('headersList').innerHTML = '';
+            headerCounter = 0;
+            document.getElementById('formMessage').innerHTML = '';
+            uploadedFileContent = null;
+
+            // Crawl type (spider / list)
+            const typeBtn = document.querySelector(`.segmented-btn[data-type="${crawlType}"]`);
+            if (typeBtn) selectCrawlType(crawlType, typeBtn);
+
+            // Start URL / URL list
+            if (crawlType === 'list') {
+                document.getElementById('url_list').value = (general.url_list || []).join('\n');
+                updateUrlCounter();
+            } else {
+                document.getElementById('start_url').value = general.start || '';
+            }
+
+            // Depth max
+            document.getElementById('depth_max').value = general.depthMax || 30;
+
+            // Allowed domains
+            document.getElementById('allowed_domains').value = (general.domains || []).join('\n');
+
+            // Crawl speed
+            const speed = general.crawl_speed || 'fast';
+            const speedMeta = {
+                very_slow: [__('index.modal_speed_very_slow'), __('index.modal_speed_very_slow_desc'), 'hourglass_top'],
+                slow:      [__('index.modal_speed_slow'),      __('index.modal_speed_slow_desc'),      'pace'],
+                fast:      [__('index.modal_speed_fast'),      __('index.modal_speed_fast_desc'),      'speed'],
+                unlimited: [__('index.modal_speed_unlimited'), __('index.modal_speed_unlimited_desc'), 'bolt']
+            };
+            const [sName, sDesc, sIcon] = speedMeta[speed] || speedMeta.fast;
+            selectSpeedOption(speed, sName, sDesc, sIcon);
+
+            // Crawl mode
+            const mode = general.crawl_mode || 'classic';
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.mode-btn[data-mode="${mode}"]`)?.classList.add('active');
+            document.getElementById('crawl_mode').value = mode;
+
+            // Scope toggles
+            document.getElementById('respect_robots').checked    = advanced.respect_robots    !== false;
+            document.getElementById('respect_nofollow').checked  = advanced.respect_nofollow  !== false;
+            document.getElementById('respect_canonical').checked = advanced.respect_canonical !== false;
+            document.getElementById('follow_redirects').checked  = advanced.follow_redirects  !== false;
+            document.getElementById('store_html').checked        = advanced.store_html        !== false;
+            document.getElementById('retry_failed_urls').checked = advanced.retry_failed_urls !== false;
+
+            // HTTP Auth
+            const httpAuth = advanced.http_auth;
+            const hasAuth  = !!(httpAuth && (httpAuth.username || httpAuth.password));
+            document.getElementById('enable_auth').checked = hasAuth;
+            toggleAuthFields();
+            if (hasAuth) {
+                document.getElementById('auth_username').value = httpAuth.username || '';
+                document.getElementById('auth_password').value = httpAuth.password || '';
+            }
+
+            // User Agent — match preset or fall back to custom
+            const storedUA   = general['user-agent'] || '';
+            const matchedKey = Object.keys(uaPresets).find(k => uaPresets[k] === storedUA);
+            if (matchedKey) {
+                const uaNames = {
+                    'scouter':           ['Scouter',                      'smart_toy',     __('index.ua_default')],
+                    'googlebot-mobile':  ['Googlebot Smartphone',         'phone_android', __('index.ua_googlebot_mobile')],
+                    'googlebot-desktop': ['Googlebot Desktop',            'computer',      __('index.ua_googlebot_desktop')],
+                    'chrome':            [__('index.ua_chrome_user'),     'person',        __('index.ua_chrome_desc')]
+                };
+                const [uaName, uaIcon, uaDesc] = uaNames[matchedKey] || ['Scouter', 'smart_toy', ''];
+                selectUAOption(matchedKey, uaName, uaDesc, uaIcon);
+            } else if (storedUA) {
+                document.getElementById('user_agent').value   = storedUA;
+                document.getElementById('custom_ua_input').value = storedUA;
+            }
+
+            // Custom headers
+            Object.entries(advanced.custom_headers || {}).forEach(([name, value]) => {
+                addHeaderWithValues(name, value);
+            });
+
+            // Extractors
+            Object.entries(advanced.xPathExtractors || {}).forEach(([name, pattern]) => {
+                addExtractorWithValues(name, 'xpath', pattern);
+            });
+            Object.entries(advanced.regexExtractors || {}).forEach(([name, pattern]) => {
+                addExtractorWithValues(name, 'regex', pattern);
+            });
+            updateExtractorsEmptyState();
+
+            setTimeout(() => {
+                const focusEl = crawlType === 'list'
+                    ? document.getElementById('url_list')
+                    : document.getElementById('start_url');
+                focusEl?.focus();
+            }, 100);
+        }
         
         function initDefaultExtractors() {
             // Clear existing
@@ -698,6 +812,7 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
             document.getElementById('headersList').innerHTML = '';
             extractorCounter = 0;
             headerCounter = 0;
+            reCrawlTargetUserId = null;
             // Reset UI states
             updateExtractorsEmptyState();
             resetModalDefaults();
@@ -1364,7 +1479,11 @@ if (isset($_GET['partial']) && $_GET['partial'] === 'projects') {
                 formData.start_url = document.getElementById('start_url').value;
                 formData.depth_max = document.getElementById('depth_max').value;
             }
-            
+
+            if (reCrawlTargetUserId) {
+                formData.target_user_id = reCrawlTargetUserId;
+            }
+
             try {
                 // Create project
                 const response = await fetch('api/projects', {

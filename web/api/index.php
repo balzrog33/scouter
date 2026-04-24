@@ -28,11 +28,21 @@ use App\Http\Controllers\QueryController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\MonitorController;
 use App\Http\Controllers\CategorizationController;
+use App\Http\Controllers\AuthController;
 
 $request = new Request();
 
 try {
     $router = new Router();
+
+    // =============================================================================
+    // AUTH — JWT Bearer (clients API externes: n8n, scripts, CI, …)
+    // Ces endpoints sont publics (pas de middleware auth) : le login/refresh
+    // constitue précisément l'obtention du token.
+    // =============================================================================
+    $router->post('/auth/token', [AuthController::class, 'token']);
+    $router->post('/auth/refresh', [AuthController::class, 'refresh']);
+    $router->post('/auth/revoke', [AuthController::class, 'revoke']);
 
     // =============================================================================
     // CATEGORIES

@@ -193,6 +193,9 @@ class Router
     private function applyAuth(array $options): void
     {
         if (!empty($options['auth'])) {
+            // Essaie d'abord l'auth JWT Bearer (clients API externes, n8n...),
+            // puis retombe sur l'auth session classique si aucun token n'est fourni.
+            $this->auth->authenticateFromBearer();
             $this->auth->requireLoginApi();
         }
 

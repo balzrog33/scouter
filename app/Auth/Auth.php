@@ -2,6 +2,7 @@
 
 namespace App\Auth;
 
+use App\Auth\JwtService;
 use App\Database\UserRepository;
 use App\Database\ProjectRepository;
 use App\Database\CrawlRepository;
@@ -610,7 +611,94 @@ class Auth
     {
         if (!$this->isLoggedIn()) {
             http_response_code(401);
+            header('WWW-Authenticate: Bearer realm="scouter-api"');
             die(json_encode(['error' => 'Non authentifié']));
         }
+    }
+
+    // ==================== BEARER TOKEN AUTHENTICATION ====================
+
+    /**
+     * Tente d'authentifier la requête via un JWT Bearer (header Authorization).
+     *
+     * Si un access token valide est présent, hydrate l'état de session en mémoire
+     * pour que tout le code existant (requireLoginApi, isAdmin, canAccessProject,
+     * etc.) continue de fonctionner sans modification.
+     *
+     * N'écrase pas une session déjà authentifiée.
+     *
+     * @return bool true si l'authentification Bearer a réussi
+     */
+    public function authenticateFromBearer(): bool
+    {
+        if ($this->isLoggedIn()) {
+            return false;
+        }
+
+        $header = $this->getAuthorizationHeader();
+        if ($header === null || stripos($header, 'Bearer ') !== 0) {
+            return false;
+        }
+
+        $token = trim(substr($header, 7));
+        if ($token === '') {
+            return false;
+        }
+
+        try {
+            $jwt = new JwtService();
+            $decoded = $jwt->decode($token);
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        if (($decoded->type ?? null) !== 'access') {
+            return false;
+        }
+
+        $userId = isset($decoded->sub) ? (int) $decoded->sub : 0;
+        if ($userId <= 0) {
+            return false;
+        }
+
+        // Vérifie que l'utilisateur existe toujours (révocation par suppression)
+        $user = $this->users ? $this->users->getById($userId) : null;
+        if (!$user) {
+            return false;
+        }
+
+        // Hydrate l'état de session (non persisté — regenère pas le cookie)
+        $_SESSION['user_id']   = $user->id;
+        $_SESSION['email']     = $user->email;
+        $_SESSION['role']      = $user->role ?? 'user';
+        $_SESSION['logged_in'] = true;
+        $_SESSION['auth_via']  = 'bearer';
+
+        return true;
+    }
+
+    /**
+     * Lit le header Authorization en couvrant les différentes configurations
+     * de serveur (Apache, Nginx+FPM, CGI/Redirect).
+     */
+    private function getAuthorizationHeader(): ?string
+    {
+        if (!empty($_SERVER['HTTP_AUTHORIZATION'])) {
+            return $_SERVER['HTTP_AUTHORIZATION'];
+        }
+        if (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+            return $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        }
+        if (function_exists('apache_request_headers')) {
+            $headers = apache_request_headers();
+            if ($headers) {
+                foreach ($headers as $name => $value) {
+                    if (strcasecmp($name, 'Authorization') === 0) {
+                        return $value;
+                    }
+                }
+            }
+        }
+        return null;
     }
 }
